@@ -1,0 +1,454 @@
+---
+title: "Assignment 7 - Repeated measure"
+author: "Ruben Vinueza"  
+format:
+  html:
+    code-fold: true 
+    embed-resources: true
+    toc: true
+    number-sections: true
+    theme: cerulean
+---
+
+# Introduction  
+This assignment will ask you to conduct a repeated measure analysis. 
+
+For that, you will first need to watch (and code along with) the following repeated measure video:
+
+- repeated measure lecture: https://youtu.be/-ANqcQhB--A?si=7YeeYqDgcLsj5erW&t=4268 (starts at 01:11:08, watch till the end, about 50 min)
+
+- repeated measure lab part 1: https://youtu.be/GY2e-9M5bFM?si=TIw5F4EF2m9Dx5uK (watch full video, ~1h 50 min)  
+
+- repeated measure lab part 2: https://youtu.be/F3vg89ymLeM?si=Zv-RPIdS8mig4EMb
+(watch full video, ~2h)
+
+- The partial script for the video above is in our GitHub repository, 04-classcode, **03-11_repeatedmeasure_partial.qmd**.  
+
+- The data set for this exercise is in oir GitHub repository, 03-classcode, **wheat_nk_balkh_rm.csv**.
+
+
+**AFTER watching the video and developing the code in class**, then start working on this HW assignment.  
+
+# Instructions  
+
+  - Create on your GitHub a repo named `06_rm`.  
+  - Clone it to your computer, create the necessary subfolders.
+  - Move the script **03-11_repeatedmeasure_partial.qmd** into the `code` subfolder.
+  - Move this script into the `code` subfolder  
+  - Move the **wheat_nk_balkh_rm.csv** data set into the `data` subfolder  
+  - On this script, fill your name under the `title` section of the YAML  
+  
+# Goal of this assignment  
+The goal is this assignment is for you to **learn about and conduct a full repeated measure analysis**.
+
+Once you finish coding along with the videos, answer the following questions.
+
+# Questions  
+In class, we decided to use AIC as the metric to select the best model, and this determined the best model to be the one with a general error correlation matrix structure. If we had used BIC as the metric, then the model selected would have been the default model. Here, you are asked to use BIC and thus select the default model as the best, and perform all the steps after model selection. You may copy and paste the class script, and adapt the copied version to implement these changes.  
+
+# Setup and wrangling  
+```{r}
+#| message: false
+#| warning: false
+
+#install.packages("nlme")
+library(tidyverse) # for data wrangling and plotting
+library(car) # for Anova function
+library(lme4)
+library(broom) # for model residuals extraction
+library(emmeans) # for model mean extraction
+library(multcomp) # for pairwise comparison letter display
+library(nlme) # for repeated measure correlation structures 
+
+```
+
+Reading data and doing some light wrangling.  
+```{r}
+#| message: false
+rm_rcbd_df <- read_csv("../data/wheat_nk_balkh_rm.csv") %>%
+  mutate(across(trt:splot, ~factor(.))) %>%
+  mutate(fdap = factor(dap))
+
+rm_rcbd_df
+```
+
+# EDA  
+```{r}
+summary(rm_rcbd_df)
+```
+
+```{r}
+ggplot(rm_rcbd_df, aes(x = fdap, 
+                       y = yield_kgha)) +
+  geom_boxplot() +
+  facet_grid(.~trtname)
+```
+
+# Model 1 - default  
+```{r} 
+options(contrasts = c("contr.sum", "contr.poly"))
+
+mod1_default_lmer <- lmer(yield_kgha ~ krate_kgha*nrate_kgha*fdap + 
+                            (1 | block/krate_kgha/nrate_kgha), 
+                          data = rm_rcbd_df
+                          )
+
+
+mod1_default_lmer
+
+```
+
+
+```{r}
+mod1_default <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                    random = ~ 1| block/krate_kgha/nrate_kgha,
+                    data = rm_rcbd_df
+                    )
+
+mod1_default
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod1_default, resType = "n") %>%
+  plot(alpha = 0.01)
+
+```
+
+# Model 2 - Compound Symmetry  
+```{r}
+mod2_cs <- lme(yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+                    random = ~ 1| block/krate_kgha/nrate_kgha, 
+                    correlation = corCompSymm(form = ~dap), 
+                    data = rm_rcbd_df
+                    )
+
+mod2_cs
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod2_cs, resType = "n") %>%
+  plot(alpha = 0.01)
+
+```
+# Model 3 - General  
+```{r}
+mod3_gen <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corSymm(),
+  data = rm_rcbd_df)
+
+mod3_gen
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod3_gen, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+# Model 4 - Autoregressive order 1 (AR1)  
+```{r}
+mod4_ar1 <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corAR1(form = ~ dap),
+  data = rm_rcbd_df)
+
+mod4_ar1
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod4_ar1, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+# Model 5 - Autoregressive order moving average (ARMA11)  
+```{r}
+mod5_arma11 <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corARMA(p = 1, q = 1),
+  data = rm_rcbd_df)
+
+mod5_arma11
+```
+## empirical autocorrelation function  
+```{r}
+ACF(mod5_arma11, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+
+# Model 6 - Exponential  
+
+```{r}
+mod6_exp <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corExp(form = ~dap),
+  data = rm_rcbd_df)
+
+mod6_exp
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod6_exp, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+# Model 7 - Gaussian  
+```{r}
+mod7_gaus <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corGaus(form = ~dap),
+  data = rm_rcbd_df)
+
+mod7_gaus
+```
+## empirical autocorrelation function  
+```{r}
+ACF(mod7_gaus, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+# Model 8 - Linear  
+```{r}
+mod8_lin <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corLin(form = ~dap),
+  data = rm_rcbd_df)
+
+mod8_lin
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod8_lin, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+# Model 9 - Rational Quadratic  
+```{r}
+mod9_rq <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corRatio(form = ~dap),
+  data = rm_rcbd_df)
+
+mod9_rq
+```
+
+## empirical autocorrelation function  
+```{r}
+ACF(mod9_rq, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+
+# Model 10 - Spherical  
+
+```{r}
+mod10_sph <- lme(
+  yield_kgha ~ krate_kgha*nrate_kgha*fdap,
+  random = ~ 1|block/krate_kgha/nrate_kgha,
+  correlation = corSpher(form = ~dap),
+  data = rm_rcbd_df)
+
+mod10_sph
+```
+## empirical autocorrelation function  
+```{r}
+ACF(mod10_sph, resType = "n") %>%
+  plot(alpha = 0.01)
+```
+
+# Final model comparison and selection  
+```{r}
+anova(mod1_default, 
+      mod2_cs, mod3_gen, mod4_ar1, mod5_arma11,
+      mod6_exp, mod7_gaus, mod8_lin, mod9_rq, mod10_sph) %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "modelname") %>%
+  janitor::clean_names() %>%
+  dplyr::select(modelname, model, df, aic, bic) %>%
+  arrange(bic)
+ 
+```
+  
+## Q1: Include here the residual assessment of the default model. Include each plot and its interpretation. How do these residuals from the default model visually compare to those from the general model?  
+The residuals graphs look similar and both are complaint with the residual assumptions. Each explanation are after each plot. 
+
+```{r}
+library(broom.mixed)
+mod1_default_resid <- augment(mod1_default) %>%
+  mutate(.stdresid=resid(mod1_default, type="pearson", scaled=T))
+
+mod1_default_resid
+```
+
+### Block random effects are iid ~ N(0,var_a)  
+```{r }
+ranef(mod1_default)[[1]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile")+
+  theme_bw()
+
+```
+We have 4 points corresponding to each of the blocks, they look good meaning there is not a big distance of the points from the line. 
+
+### Block:krate random effects are iid ~ N(0,var_b)  
+```{r }
+ranef(mod1_default)[[2]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile")+
+  theme_bw()
+
+```
+We have 12 observations corresponding of the 4 blocks with 3 potassium levels. It looks good, some deviation in the beggining and the end but not to worry. 
+
+### Block:krate:nrate random effects are iid ~ N(0,var_c)  
+```{r }
+ranef(mod1_default)[[3]] %>%
+  ggplot(aes(sample=`(Intercept)`))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile")+
+  theme_bw()
+
+```
+This graph corresponds to the random effect component of nitrogen, inside potassium, inside block a little deviation but looks good overall. 
+
+### Within-group errors are iid ~ N(0, var_e)  
+```{r }
+ggplot(mod1_default_resid, aes(x=.fitted, y=.stdresid))+
+  geom_hline(yintercept = 0, color="red")+
+  geom_point(shape = 21,
+             fill = "purple", 
+             size = 3,
+             alpha = .7)+
+  geom_smooth()+
+  geom_hline(yintercept = c(-3,3), color = "red")+
+  theme_bw()
+```
+We do not see a pattern, nothing is beyond 3 or -3 so no outlayers, it also does not seem that the variance is increasing as we increase the x axis. It seems independent, no outliers and the variance homogenous.
+
+```{r}
+ggplot(mod1_default_resid, aes(sample=.stdresid))+
+  stat_qq(  shape = 21,
+            fill = "purple", 
+            size = 3,
+            alpha = .7
+  )+
+  stat_qq_line()+
+  labs(x = "Theoretical quantile",
+       y = "Sample quantile")+
+  theme_bw()
+
+```
+
+Except for a few points on the upper tail, everything looks great. Overall looks good. So we can go with the ANOVA table 
+
+## Q2: Include here the ANOVA table from the default model. How does it compare with the ANOVA table from the general model?  
+In the ANOVA table from the general model the most complex interaction while is not much in the default model. What is was significant in the default model was fdap and two way interaction of potassium with nitrogen. 
+
+# Inference - default model
+```{r anova}
+Anova(mod1_default, type = 3)
+```
+## fdap 
+
+```{r}
+rm_rcbd_cld_fdap <- emmeans(mod1_default, ~ fdap) %>%
+  cld(reversed = T,
+      Letters = letters,
+      adjust = "none"
+      ) %>%
+  as.data.frame() %>%
+  mutate(letter = trimws(.group))
+rm_rcbd_cld_fdap
+```
+## K x N interaction  
+```{r}
+rm_rcbd_cld_interaction <- emmeans(mod1_default, ~krate_kgha*nrate_kgha) %>%
+  cld(reversed = T,
+      Letters = letters,
+      adjust = "none"
+      ) %>%
+  as.data.frame() %>%
+  mutate(letter = trimws(.group)) %>%
+  mutate(trtname = paste0(nrate_kgha,"+",krate_kgha))
+
+rm_rcbd_cld_interaction
+```
+```{r}
+#| fig-width: 15
+#| fig-height: 5
+ggplot(mapping = aes(fill = krate_kgha), y = yield_kgha, fill = factor(nrate_kgha))+
+  # Raw data and boxplots  
+  geom_boxplot(data = rm_rcbd_df,
+               aes(x = krate_kgha, y = yield_kgha),
+               alpha = .8) +
+  geom_jitter(data = rm_rcbd_df,
+               aes(x = krate_kgha, y = yield_kgha),
+              shape = 21,
+              size = 3,
+              alpha = .6) +
+  # Adding letters
+  geom_label(data = rm_rcbd_cld_interaction,
+            aes(x = krate_kgha , y = emmean, label = letter),
+            fill = "white") +
+  labs(x = "K Rate (kg/ha)",
+       y = "Yield (kg/ha)",
+       fill = "N Rate (kg/ha)") +
+  scale_fill_viridis_d() +
+  facet_grid(.~trtname) +
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        legend.position = "none")
+
+```
+
+# Submitting your work  
+Once you have developed all the code and answers, make sure to Render this quarto file.  
+
+**Notes on rendering**:  
+
+- Make sure to render your work and inspect how the final html look like.  
+- If it does not look professional for whatever reason, then fix the issue, re-render it, recheck.  
+- Only send me your work once your html file looks professional.  
+  - **DO NOT** delete the file's heading levels (# and ##). They set up the proper heading 1 and 2 levels, and I use them to guide my grading.  
+  - If a given chunk is also outputting warnings or messages, inhibit this behavior by changing the chunk options `message` and `warning` to `FALSE` (I'll demo this in a moment).  
+  
+  - If, after rendered, 2 lines of text are connected and you wish to "break line" between them, add 2 extra spaces after the first one (I'lld demo this in a moment).  
+
+After rendering, an .html file will be created on your `code` folder.  
+
+Rename this file to `Assignment-07-rm-LASTNAME.html`.    
+
+For ex., mine would be `Assignment-07-rm-Bastos.html`.
+
+Submit your work by uploading the **html** file to **eLC Assigment #7 - Repeated measure** by Mar 25 11:59 pm.  
+  
+
+
+
+
